@@ -104,7 +104,7 @@
       <span class="card-title" style="color: var(--battery);">🔑 Inställningar (Growatt)</span>
     </div>
     <div class="form-group">
-      <label>Growatt API Token (Eller klistra in i HARDCODED_TOKEN i koden)</label>
+      <label>Growatt API Token</label>
       <input type="text" id="cfgToken" placeholder="Klistra in din API Token här">
     </div>
     <div class="form-group">
@@ -290,25 +290,31 @@
       fetchGrowattLive();
     });
 
-async function callGrowattPost(sn, token) {
-  var targetUrl = 'https://openapi.growatt.com/v1/device/tlx/tlx_last_data';
-  // Vi använder en proxy som garanterat släpper igenom HTTPS från mobilen
-  var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl + '?tlx_sn=' + sn);
+    async function callGrowattApi(sn, token) {
+      var targetUrl = 'https://openapi.growatt.com/v1/device/tlx/tlx_last_data?tlx_sn=' + encodeURIComponent(sn);
+      // Använder en stabil publik proxy som accepterar GET och skickar med token som Header
+      var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl);
 
-  var opts = {
-    method: 'GET', // AllOrigins hanterar POST som GET-parameter säkert i mobiler
-    headers: {
-      'token': token
+      try {
+        var res = await fetch(proxyUrl);
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (e) {}
+
+      // Reservalternativ om AllOrigins tappar kontakt
+      try {
+        var backupUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://openapi.growatt.com/v1/device/tlx/tlx_last_data');
+        var res2 = await fetch(backupUrl, {
+          method: 'POST',
+          headers: { 'token': token, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'tlx_sn=' + encodeURIComponent(sn)
+        });
+        if (res2.ok) return await res2.json();
+      } catch (e2) {}
+
+      return null;
     }
-  };
-
-  try {
-    var res = await fetch(proxyUrl);
-    if (res.ok) return await res.json();
-  } catch (e) {}
-  
-  return null;
-}
 
     async function fetchGrowattLive() {
       var token = memToken || document.getElementById('cfgToken').value.trim() || safeGet('gw_token');
@@ -322,15 +328,11 @@ async function callGrowattPost(sn, token) {
 
       document.getElementById('statusText').textContent = 'Uppdaterar...';
 
-      var r = await callGrowattPost(sn, token);
+      var r = await callGrowattApi(sn, token);
       if (!r || r.error_code !== 0 || !r.data) {
         document.getElementById('statusText').textContent = 'Live (Väntar)';
         var errMsg = r ? (r.error_msg || 'Felkod ' + r.error_code) : 'Kunde inte nå Growatt';
         document.getElementById('lastUpdateText').textContent = errMsg;
-        
-        if (r && r.error_code && String(r.error_code).indexOf('frequent') !== -1) {
-          return;
-        }
         return;
       }
 
@@ -358,9 +360,8 @@ async function callGrowattPost(sn, token) {
 
       document.getElementById('pvVal').textContent = ppvTotal.toFixed(2) + ' kW';
       
-      // Plockar rätt fält för dagsproduktion (letar efter rimligt värde för idag)
       var epvToday = Number(d.epvToday !== undefined ? d.epvToday : (d.eacToday || 0));
-      if (epvToday > 1000) epvToday = epvToday / 10; // Om värdet råkar vara i Wh eller har decimalfel i API:et
+      if (epvToday > 1000) epvToday = epvToday / 10;
 
       document.getElementById('pvSub').textContent = 'Idag totalt: ' + epvToday.toFixed(1) + ' kWh';
 
