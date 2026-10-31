@@ -104,7 +104,7 @@
       <span class="card-title" style="color: var(--battery);">🔑 Inställningar (Growatt)</span>
     </div>
     <div class="form-group">
-      <label>Growatt API Token</label>
+      <label>Growatt API Token (Eller klistra in i HARDCODED_TOKEN i koden)</label>
       <input type="text" id="cfgToken" placeholder="Klistra in din API Token här">
     </div>
     <div class="form-group">
@@ -291,28 +291,22 @@
     });
 
     async function callGrowattApi(sn, token) {
-      var targetUrl = 'https://openapi.growatt.com/v1/device/tlx/tlx_last_data?tlx_sn=' + encodeURIComponent(sn);
-      // Använder en stabil publik proxy som accepterar GET och skickar med token som Header
-      var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl);
+      var targetUrl = 'https://openapi.growatt.com/v1/device/tlx/tlx_last_data';
+      var proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
 
       try {
-        var res = await fetch(proxyUrl);
+        var res = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: {
+            'token': token,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: 'tlx_sn=' + encodeURIComponent(sn)
+        });
         if (res.ok) {
           return await res.json();
         }
       } catch (e) {}
-
-      // Reservalternativ om AllOrigins tappar kontakt
-      try {
-        var backupUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://openapi.growatt.com/v1/device/tlx/tlx_last_data');
-        var res2 = await fetch(backupUrl, {
-          method: 'POST',
-          headers: { 'token': token, 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: 'tlx_sn=' + encodeURIComponent(sn)
-        });
-        if (res2.ok) return await res2.json();
-      } catch (e2) {}
-
       return null;
     }
 
