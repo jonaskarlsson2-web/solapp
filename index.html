@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sol & Batteri Live</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --solar: #f59e0b;
+      --battery: #10b981;
+      --grid: #3b82f6;
+      --home: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 16px; max-width: 480px; margin: 0 auto; padding-bottom: 40px; }
+    
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    header h1 { font-size: 1.25rem; font-weight: 700; }
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    .status-badge { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; background: rgba(16, 185, 129, 0.15); color: var(--battery); padding: 5px 10px; border-radius: 999px; font-weight: 600; }
+    .dot { width: 8px; height: 8px; background: var(--battery); border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .icon-btn { background: #1e293b; border: 1px solid var(--card-border); color: var(--text); padding: 6px 10px; border-radius: 10px; cursor: pointer; font-size: 0.85rem; }
+    .icon-btn:active { transform: scale(0.95); }
+
+    .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .card-title { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+
+    .settings-panel { border-color: var(--battery); background: #162238; display: none; margin-bottom: 16px; }
+    .form-group { margin-bottom: 10px; }
+    .form-group label { display: block; font-size: 0.76rem; color: var(--muted); margin-bottom: 4px; }
+    .form-group input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--card-border); background: #0f172a; color: var(--text); font-size: 0.85rem; }
+    .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+    .btn-primary { flex: 1; background: var(--battery); color: #052e16; border: none; padding: 12px 14px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.9rem; }
+    .btn-secondary { background: #334155; color: var(--text); border: none; padding: 12px 14px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
+
+    .flow-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .metric-box { background: rgba(15, 23, 42, 0.6); border-radius: 12px; padding: 12px; border-left: 4px solid transparent; display: flex; flex-direction: column; justify-content: space-between; }
+    .metric-box.solar { border-left-color: var(--solar); }
+    .metric-box.battery { border-left-color: var(--battery); }
+    .metric-box.home { border-left-color: var(--home); }
+    .metric-box.grid { border-left-color: var(--grid); }
+    .metric-label { font-size: 0.78rem; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .metric-val { font-size: 1.35rem; font-weight: 700; }
+    .metric-sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+    .price-divider { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+    .price-row { display: flex; justify-content: space-between; align-items: baseline; }
+    .price-label { font-size: 0.72rem; color: var(--muted); }
+    .price-badge { font-size: 0.85rem; font-weight: 700; color: #60a5fa; }
+    .price-minmax { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+
+    .strings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .string-box { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 12px; padding: 12px; }
+    .string-name { font-size: 0.8rem; font-weight: 700; color: var(--solar); margin-bottom: 6px; display: block; }
+    .string-power { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
+    .string-day { font-size: 0.78rem; color: var(--solar); margin-bottom: 6px; font-weight: 600; }
+    .string-specs { display: flex; justify-content: space-between; font-size: 0.74rem; color: var(--muted); border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px; }
+    .string-specs strong { color: var(--text); }
+
+    .tech-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding-top: 10px; border-top: 1px solid var(--card-border); }
+    .tech-item { background: rgba(15, 23, 42, 0.4); padding: 8px; border-radius: 8px; text-align: center; }
+    .tech-label { font-size: 0.68rem; color: var(--muted); margin-bottom: 2px; }
+    .tech-val { font-size: 0.8rem; font-weight: 600; color: var(--text); }
+
+    .soc-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .soc-big { font-size: 2rem; font-weight: 800; color: var(--battery); }
+    .soc-kwh { font-size: 0.9rem; color: var(--muted); }
+    .bar-bg { width: 100%; height: 14px; background: #0f172a; border-radius: 999px; overflow: hidden; margin-bottom: 10px; border: 1px solid #334155; }
+    .bar-fill { height: 100%; background: linear-gradient(90deg, #059669, #10b981); width: 0%; transition: width 0.4s ease; }
+    .batt-details { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 0.74rem; color: var(--muted); text-align: center; }
+    .batt-details div { background: rgba(15, 23, 42, 0.4); padding: 8px; border-radius: 8px; }
+    .batt-details strong { display: block; color: var(--text); font-size: 0.84rem; margin-top: 2px; }
+
+    #rawBox { display: none; background: #090d16; border: 1px solid #334155; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.72rem; color: #94a3b8; max-height: 250px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <h1>Sol & Batteri</h1>
+      <div style="font-size: 0.75rem; color: var(--muted);" id="lastUpdateText">Ansluter till CZM0D4F072...</div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge">
+        <span class="dot"></span>
+        <span id="statusText">Live</span>
+      </div>
+      <button type="button" class="icon-btn" id="btnRefresh" title="Uppdatera nu">🔄</button>
+      <button type="button" class="icon-btn" id="btnToggleCfg" title="Inställningar">⚙️</button>
+    </div>
+  </header>
+
+  <div class="card settings-panel" id="settingsCard">
+    <div class="card-header">
+      <span class="card-title" style="color: var(--battery);">🔑 Inställningar (Growatt)</span>
+    </div>
+    <div class="form-group">
+      <label>Growatt API Token (Eller klistra in i HARDCODED_TOKEN i koden)</label>
+      <input type="text" id="cfgToken" placeholder="Klistra in din API Token här">
+    </div>
+    <div class="form-group">
+      <label>Växelriktarens Serienummer</label>
+      <input type="text" id="cfgSn" value="CZM0D4F072">
+    </div>
+    <div class="btn-row">
+      <button type="button" class="btn-primary" id="btnSave">Spara & Uppdatera</button>
+      <button type="button" class="btn-secondary" id="btnHide">Stäng</button>
+    </div>
+  </div>
+
+  <!-- Effektflöde -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Effektflöde (Realtid)</span>
+      <span style="font-size: 0.75rem; color: var(--muted);" id="sysStatusLabel">MOD 10KTL3-XH</span>
+    </div>
+    <div class="flow-grid">
+      <div class="metric-box solar">
+        <div>
+          <div class="metric-label"><span>☀️ Solproduktion</span></div>
+          <div class="metric-val" id="pvVal">0.00 kW</div>
+        </div>
+        <div class="metric-sub" id="pvSub">Idag: -- kWh</div>
+      </div>
+
+      <div class="metric-box home">
+        <div>
+          <div class="metric-label"><span>🏠 Husförbrukning</span></div>
+          <div class="metric-val" id="homeVal">0.00 kW</div>
+        </div>
+        <div class="metric-sub" id="homeSub">Idag: -- kWh</div>
+      </div>
+
+      <div class="metric-box battery">
+        <div>
+          <div class="metric-label"><span id="battBoxTitle">🔋 Batteri (--%)</span></div>
+          <div class="metric-val" id="battFlowVal">0.00 kW</div>
+        </div>
+        <div class="metric-sub" id="battFlowSub">Standby</div>
+      </div>
+
+      <div class="metric-box grid">
+        <div>
+          <div class="metric-label"><span>⚡ Elnät</span></div>
+          <div class="metric-val" id="gridVal">0.00 kW</div>
+          <div class="metric-sub" id="gridSub">Balanserad</div>
+        </div>
+        <div class="price-divider">
+          <div class="price-row">
+            <span class="price-label">SE3 (inkl. moms)</span>
+            <span class="price-badge" id="se3Price">Hämtar...</span>
+          </div>
+          <div class="price-minmax" id="se3MinMax">Läser in spotpris...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Solsträngar & Växelriktare -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Solsträngar & Växelriktare</span>
+      <span style="font-size: 0.75rem; color: var(--muted);" id="inverterState">Online</span>
+    </div>
+    <div class="strings-grid">
+      <div class="string-box">
+        <span class="string-name">☀️ Sträng 1 (PV1)</span>
+        <div class="string-power" id="pv1Power">0.00 kW</div>
+        <div class="string-day" id="pv1Day">Idag: -- kWh</div>
+        <div class="string-specs">
+          <span><strong id="pv1Volt">0 V</strong></span>
+          <span><strong id="pv1Amp">0.0 A</strong></span>
+        </div>
+      </div>
+      <div class="string-box">
+        <span class="string-name">☀️ Sträng 2 (PV2)</span>
+        <div class="string-power" id="pv2Power">0.00 kW</div>
+        <div class="string-day" id="pv2Day">Idag: -- kWh</div>
+        <div class="string-specs">
+          <span><strong id="pv2Volt">0 V</strong></span>
+          <span><strong id="pv2Amp">0.0 A</strong></span>
+        </div>
+      </div>
+    </div>
+    <div class="tech-grid">
+      <div class="tech-item">
+        <div class="tech-label">Temp Växelriktare</div>
+        <div class="tech-val" id="invTemp">-- °C</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-label">Fasspänning (L1-L3)</div>
+        <div class="tech-val" id="phaseVolts">--/--/-- V</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-label">Nätfrekvens</div>
+        <div class="tech-val" id="gridFreq">-- Hz</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batteristatus -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Batteristatus (ARK 20.48 kWh)</span>
+      <span style="font-size: 0.75rem; color: var(--muted);" id="bmsStatus">8 Moduler</span>
+    </div>
+    <div class="soc-header">
+      <span class="soc-big" id="socText">--%</span>
+      <span class="soc-kwh" id="kwhText">-- / 20.5 kWh</span>
+    </div>
+    <div class="bar-bg">
+      <div class="bar-fill" id="socBar"></div>
+    </div>
+    <div class="batt-details">
+      <div>
+        <span>Batterispänning & Temp</span>
+        <strong id="battVoltTemp">-- V • -- °C</strong>
+      </div>
+      <div>
+        <span>Cellspänning (Min / Max)</span>
+        <strong id="cellVoltInfo">-- / -- V</strong>
+      </div>
+      <div>
+        <span>🔋 Dagens laddning</span>
+        <strong id="battChargeToday">-- kWh</strong>
+      </div>
+      <div>
+        <span>🔌 Dagens urladdning</span>
+        <strong id="battDischargeToday">-- kWh</strong>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align: center;">
+    <button type="button" class="icon-btn" id="btnToggleRaw" style="font-size: 0.75rem; color: var(--muted);">🔍 Visa/Dölj alla rådata-fält</button>
+    <div id="rawBox">Ingen data hämtad ännu.</div>
+  </div>
+
+  <script>
+    // ====================================================================
+    // HÄR KAN DU KLISTRA IN DIN TOKEN PERMANENT:
+    const HARDCODED_TOKEN = ""; 
+    const HARDCODED_SN = "CZM0D4F072";
+    // ====================================================================
+
+    const BATTERY_CAPACITY_KWH = 20.48;
+    let memToken = HARDCODED_TOKEN;
+    let memSn = HARDCODED_SN;
+
+    function safeGet(key) {
+      try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+    }
+    function safeSet(key, val) {
+      try { localStorage.setItem(key, val); } catch (e) {}
+    }
+
+    document.getElementById('btnToggleCfg').addEventListener('click', function() {
+      var card = document.getElementById('settingsCard');
+      card.style.display = (card.style.display === 'block') ? 'none' : 'block';
+    });
+
+    document.getElementById('btnHide').addEventListener('click', function() {
+      document.getElementById('settingsCard').style.display = 'none';
+    });
+
+    document.getElementById('btnRefresh').addEventListener('click', function() {
+      fetchGrowattLive();
+    });
+
+    document.getElementById('btnToggleRaw').addEventListener('click', function() {
+      var rb = document.getElementById('rawBox');
+      rb.style.display = (rb.style.display === 'block') ? 'none' : 'block';
+    });
+
+    document.getElementById('btnSave').addEventListener('click', function() {
+      memToken = document.getElementById('cfgToken').value.trim();
+      memSn = document.getElementById('cfgSn').value.trim() || "CZM0D4F072";
+      safeSet('gw_token', memToken);
+      safeSet('gw_sn', memSn);
+      document.getElementById('settingsCard').style.display = 'none';
+      fetchGrowattLive();
+    });
+
+    async function callGrowattPost(sn, token) {
+      var targetUrl = 'https://openapi.growatt.com/v1/device/tlx/tlx_last_data';
+      var opts = {
+        method: 'POST',
+        headers: {
+          'token': token,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: 'tlx_sn=' + encodeURIComponent(sn)
+      };
+
+      var urls = [targetUrl, 'https://corsproxy.io/?' + encodeURIComponent(targetUrl)];
+      for (var i = 0; i < urls.length; i++) {
+        try {
+          var res = await fetch(urls[i], opts);
+          if (res.ok) return await res.json();
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    async function fetchGrowattLive() {
+      var token = memToken || document.getElementById('cfgToken').value.trim() || safeGet('gw_token');
+      var sn = memSn || document.getElementById('cfgSn').value.trim() || "CZM0D4F072";
+
+      if (!token) {
+        document.getElementById('settingsCard').style.display = 'block';
+        document.getElementById('lastUpdateText').textContent = 'Klistra in din Token i inställningar (⚙️)';
+        return;
+      }
+
+      document.getElementById('statusText').textContent = 'Uppdaterar...';
+
+      var r = await callGrowattPost(sn, token);
+      if (!r || r.error_code !== 0 || !r.data) {
+        document.getElementById('statusText').textContent = 'Live (Väntar)';
+        var errMsg = r ? (r.error_msg || 'Felkod ' + r.error_code) : 'Kunde inte nå Growatt';
+        document.getElementById('lastUpdateText').textContent = errMsg;
+        
+        if (r && r.error_code && String(r.error_code).indexOf('frequent') !== -1) {
+          return;
+        }
+        return;
+      }
+
+      populateDashboard(r.data);
+      document.getElementById('statusText').textContent = 'Live';
+      document.getElementById('lastUpdateText').textContent = 'Senast uppdaterad: ' + new Date().toLocaleTimeString('sv-SE');
+    }
+
+    function populateDashboard(raw) {
+      var d = raw.data || raw;
+      if (d.tlx_last_data) d = d.tlx_last_data;
+
+      var nonZero = {};
+      Object.keys(d).sort().forEach(function(k) {
+        if (d[k] !== 0 && d[k] !== "0" && d[k] !== "" && d[k] !== null) {
+          nonZero[k] = d[k];
+        }
+      });
+      document.getElementById('rawBox').textContent = JSON.stringify(nonZero, null, 2);
+
+      // 1. Solsträngar & Solproduktion idag
+      var ppv1 = (Number(d.ppv1 || (d.vpv1 && d.ipv1 ? d.vpv1 * d.ipv1 / 1000 : 0)) || 0);
+      var ppv2 = (Number(d.ppv2 || (d.vpv2 && d.ipv2 ? d.vpv2 * d.ipv2 / 1000 : 0)) || 0);
+      var ppvTotal = d.ppv !== undefined ? (Number(d.ppv) / 1000) : (ppv1 + ppv2);
+
+      document.getElementById('pvVal').textContent = ppvTotal.toFixed(2) + ' kW';
+      
+      // Plockar rätt fält för dagsproduktion (letar efter rimligt värde för idag)
+      var epvToday = Number(d.epvToday !== undefined ? d.epvToday : (d.eacToday || 0));
+      if (epvToday > 1000) epvToday = epvToday / 10; // Om värdet råkar vara i Wh eller har decimalfel i API:et
+
+      document.getElementById('pvSub').textContent = 'Idag totalt: ' + epvToday.toFixed(1) + ' kWh';
+
+      var ratio1 = ppvTotal > 0 ? (ppv1 / ppvTotal) : 0.5;
+      var ratio2 = ppvTotal > 0 ? (ppv2 / ppvTotal) : 0.5;
+      var day1 = epvToday * ratio1;
+      var day2 = epvToday * ratio2;
+
+      document.getElementById('pv1Power').textContent = ppv1.toFixed(2) + ' kW';
+      document.getElementById('pv1Day').textContent = 'Idag: ~' + day1.toFixed(1) + ' kWh';
+      document.getElementById('pv1Volt').textContent = Number(d.vpv1 || 0).toFixed(0) + ' V';
+      document.getElementById('pv1Amp').textContent = Number(d.ipv1 || 0).toFixed(1) + ' A';
+
+      document.getElementById('pv2Power').textContent = ppv2.toFixed(2) + ' kW';
+      document.getElementById('pv2Day').textContent = 'Idag: ~' + day2.toFixed(1) + ' kWh';
+      document.getElementById('pv2Volt').textContent = Number(d.vpv2 || 0).toFixed(0) + ' V';
+      document.getElementById('pv2Amp').textContent = Number(d.ipv2 || 0).toFixed(1) + ' A';
+
+      // 2. Batteri & Dagens laddning/urladdning
+      var soc = Number(d.soc !== undefined ? d.soc : (d.bmsSoc !== undefined ? d.bmsSoc : (d.bdc1Soc || d.capacity || 0)));
+      var pCharge = (Number(d.pcharge1 || d.bdc1ChargePower || d.pcharge || 0)) / 1000;
+      var pDischarge = (Number(d.pdischarge1 || d.bdc1DischargePower || d.pdischarge || 0)) / 1000;
+      var battNet = pCharge > 0 ? pCharge : -pDischarge;
+
+      document.getElementById('battBoxTitle').textContent = '🔋 Batteri (' + soc + '%)';
+      document.getElementById('battFlowVal').textContent = (battNet >= 0 ? '+' : '') + battNet.toFixed(2) + ' kW';
+      document.getElementById('battFlowSub').textContent = pCharge > 0.02 ? 'Laddar' : (pDischarge > 0.02 ? 'Urladdar' : 'Standby');
+
+      document.getElementById('socText').textContent = soc + '%';
+      document.getElementById('socBar').style.width = Math.min(100, Math.max(0, soc)) + '%';
+      var storedKwh = ((soc / 100) * BATTERY_CAPACITY_KWH).toFixed(1);
+      document.getElementById('kwhText').textContent = storedKwh + ' / ' + BATTERY_CAPACITY_KWH.toFixed(1) + ' kWh';
+
+      var vbat = Number(d.bdc1Vbat || d.vbat || d.bmsVolt || 0).toFixed(1);
+      var btemp = Number(d.bdc1Temp1 || d.bmsTemp || d.temp4 || 0).toFixed(1);
+      document.getElementById('battVoltTemp').textContent = vbat + ' V • ' + btemp + ' °C';
+
+      if (d.bmsMaxCellVolt || d.bmsMinCellVolt) {
+        var minCv = Number(d.bmsMinCellVolt || 0);
+        var maxCv = Number(d.bmsMaxCellVolt || 0);
+        if (maxCv > 100) { minCv = minCv / 1000; maxCv = maxCv / 1000; }
+        var diffMv = ((maxCv - minCv) * 1000).toFixed(0);
+        document.getElementById('cellVoltInfo').textContent = minCv.toFixed(3) + ' / ' + maxCv.toFixed(3) + ' V (Δ ' + diffMv + ' mV)';
+      }
+
+      var eChargeToday = Number(d.echargeToday || d.bdc1EchargeToday || 0);
+      var eDischargeToday = Number(d.edischargeToday || d.bdc1EdischargeToday || 0);
+      document.getElementById('battChargeToday').textContent = eChargeToday.toFixed(1) + ' kWh';
+      document.getElementById('battDischargeToday').textContent = eDischargeToday.toFixed(1) + ' kWh';
+
+      // 3. Husförbrukning & Elnät
+      var pLocalLoad = (Number(d.pacToLocalLoad || d.plocalLoad || 0)) / 1000;
+      var pGridUser = (Number(d.pacToUserTotal || d.pactouser || d.pgrid || 0)) / 1000;
+      var pGridFeed = (Number(d.powerOfGridFeed || d.pactogrid || 0)) / 1000;
+      var gridNet = pGridFeed > 0 ? -pGridFeed : pGridUser;
+
+      document.getElementById('homeVal').textContent = pLocalLoad.toFixed(2) + ' kW';
+      if (d.elocalLoadToday !== undefined) {
+        document.getElementById('homeSub').textContent = 'Idag: ' + Number(d.elocalLoadToday).toFixed(1) + ' kWh';
+      }
+
+      document.getElementById('gridVal').textContent = (gridNet < 0 ? '-' : '') + Math.abs(gridNet).toFixed(2) + ' kW';
+      document.getElementById('gridSub').textContent = gridNet < -0.02 ? 'Säljer till nät' : (gridNet > 0.02 ? 'Köper från nät' : 'Balanserad');
+
+      // 4. Växelriktardata
+      if (d.temp1 !== undefined) document.getElementById('invTemp').textContent = Number(d.temp1).toFixed(1) + ' °C';
+      if (d.vac1 !== undefined) {
+        var v1 = d.vac1 || 230;
+        var v2 = d.vac2 || 230;
+        var v3 = d.vac3 || 230;
+        document.getElementById('phaseVolts').textContent = Number(v1).toFixed(0) + '/' + Number(v2).toFixed(0) + '/' + Number(v3).toFixed(0) + ' V';
+      }
+      if (d.fac !== undefined) document.getElementById('gridFreq').textContent = Number(d.fac).toFixed(2) + ' Hz';
+    }
+
+    async function fetchElectricityPrice() {
+      var now = new Date();
+      var year = now.getFullYear();
+      var month = String(now.getMonth() + 1).padStart(2, '0');
+      var day = String(now.getDate()).padStart(2, '0');
+      var url = 'https://www.elprisetjustnu.se/api/v1/prices/' + year + '/' + month + '-' + day + '_SE3.json';
+
+      try {
+        var res = await fetch(url);
+        var data = await res.json();
+        var currentEntry = data.find(function(item) {
+          var start = new Date(item.time_start);
+          var end = new Date(item.time_end);
+          return now >= start && now < end;
+        }) || data[now.getHours()] || data[0];
+
+        var currentOreMoms = (currentEntry.SEK_per_kWh * 100 * 1.25).toFixed(1);
+        var allPrices = data.map(function(d) { return d.SEK_per_kWh * 100 * 1.25; });
+        var minOre = Math.min.apply(null, allPrices).toFixed(0);
+        var maxOre = Math.max.apply(null, allPrices).toFixed(0);
+
+        document.getElementById('se3Price').textContent = currentOreMoms + ' öre/kWh';
+        document.getElementById('se3MinMax').textContent = 'Idag: Lägst ' + minOre + ' / Högst ' + maxOre + ' öre';
+      } catch (err) {
+        document.getElementById('se3Price').textContent = 'Ej tillgängligt';
+      }
+    }
+
+    document.getElementById('cfgToken').value = memToken || safeGet('gw_token');
+    fetchElectricityPrice();
+    fetchGrowattLive();
+    setInterval(fetchGrowattLive, 120000);
+  </script>
+</body>
+</html>
