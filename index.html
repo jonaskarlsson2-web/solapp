@@ -2,7 +2,7 @@
 <html lang="sv">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Sol & Batteri Live</title>
   <style>
     :root {
@@ -79,7 +79,7 @@
     .batt-details div { background: rgba(15, 23, 42, 0.4); padding: 8px; border-radius: 8px; }
     .batt-details strong { display: block; color: var(--text); font-size: 0.84rem; margin-top: 2px; }
 
-    #rawBox { display: none; background: #090d16; border: 1px solid #334155; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.72rem; color: #94a3b8; max-height: 250px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
+    #rawBox { display: none; background: #090d16; border: 1px solid #334155; border-radius: 12px; padding: 12px; font-family: monospace; font-size: 0.72rem; color: #94a3b8; max-height: 250px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; text-align: left; }
   </style>
 </head>
 <body>
@@ -87,7 +87,7 @@
   <header>
     <div>
       <h1>Sol & Batteri</h1>
-      <div style="font-size: 0.75rem; color: var(--muted);" id="lastUpdateText">Ansluter till CZM0D4F072...</div>
+      <div style="font-size: 0.75rem; color: var(--muted);" id="lastUpdateText">Ansluter via Cloudflare...</div>
     </div>
     <div class="header-right">
       <div class="status-badge">
@@ -104,7 +104,7 @@
       <span class="card-title" style="color: var(--battery);">🔑 Inställningar (Growatt)</span>
     </div>
     <div class="form-group">
-      <label>Growatt API Token (Eller klistra in i HARDCODED_TOKEN i koden)</label>
+      <label>Growatt API Token (Sparas i webbläsaren på mobilen/datorn)</label>
       <input type="text" id="cfgToken" placeholder="Klistra in din API Token här">
     </div>
     <div class="form-group">
@@ -247,7 +247,8 @@
 
   <script>
     // ====================================================================
-    // HÄR KAN DU KLISTRA IN DIN TOKEN PERMANENT:
+    // DIN EGEN CLOUDFLARE WORKER:
+    const WORKER_URL = "https://muddy-thunder-bcdb.jonaskarlsson2.workers.dev/";
     const HARDCODED_TOKEN = ""; 
     const HARDCODED_SN = "CZM0D4F072";
     // ====================================================================
@@ -290,19 +291,10 @@
       fetchGrowattLive();
     });
 
-    async function callGrowattApi(sn, token) {
-      var targetUrl = 'https://openapi.growatt.com/v1/device/tlx/tlx_last_data';
-      var proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
-
+    async function callGrowattViaWorker(sn, token) {
+      var url = WORKER_URL + '?token=' + encodeURIComponent(token) + '&sn=' + encodeURIComponent(sn);
       try {
-        var res = await fetch(proxyUrl, {
-          method: 'POST',
-          headers: {
-            'token': token,
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: 'tlx_sn=' + encodeURIComponent(sn)
-        });
+        var res = await fetch(url, { method: 'GET' });
         if (res.ok) {
           return await res.json();
         }
@@ -316,23 +308,23 @@
 
       if (!token) {
         document.getElementById('settingsCard').style.display = 'block';
-        document.getElementById('lastUpdateText').textContent = 'Klistra in din Token i inställningar (⚙️)';
+        document.getElementById('lastUpdateText').textContent = 'Fyll i din Token nedan och tryck Spara!';
         return;
       }
 
       document.getElementById('statusText').textContent = 'Uppdaterar...';
 
-      var r = await callGrowattApi(sn, token);
+      var r = await callGrowattViaWorker(sn, token);
       if (!r || r.error_code !== 0 || !r.data) {
-        document.getElementById('statusText').textContent = 'Live (Väntar)';
-        var errMsg = r ? (r.error_msg || 'Felkod ' + r.error_code) : 'Kunde inte nå Growatt';
+        document.getElementById('statusText').textContent = 'Väntar';
+        var errMsg = r ? (r.error_msg || r.error || 'Felkod ' + r.error_code) : 'Kunde inte nå Worker';
         document.getElementById('lastUpdateText').textContent = errMsg;
         return;
       }
 
       populateDashboard(r.data);
       document.getElementById('statusText').textContent = 'Live';
-      document.getElementById('lastUpdateText').textContent = 'Senast uppdaterad: ' + new Date().toLocaleTimeString('sv-SE');
+      document.getElementById('lastUpdateText').textContent = 'Uppdaterad: ' + new Date().toLocaleTimeString('sv-SE');
     }
 
     function populateDashboard(raw) {
@@ -348,29 +340,46 @@
       document.getElementById('rawBox').textContent = JSON.stringify(nonZero, null, 2);
 
       // 1. Solsträngar & Solproduktion idag
-      var ppv1 = (Number(d.ppv1 || (d.vpv1 && d.ipv1 ? d.vpv1 * d.ipv1 / 1000 : 0)) || 0);
-      var ppv2 = (Number(d.ppv2 || (d.vpv2 && d.ipv2 ? d.vpv2 * d.ipv2 / 1000 : 0)) || 0);
+      // ppv1 och ppv2 kommer i Watt från Growatt -> delar med 1000 för kW
+      var ppv1 = (Number(d.ppv1) || (d.vpv1 && d.ipv1 ? Number(d.vpv1) * Number(d.ipv1) : 0)) / 1000;
+      var ppv2 = (Number(d.ppv2) || (d.vpv2 && d.ipv2 ? Number(d.vpv2) * Number(d.ipv2) : 0)) / 1000;
       var ppvTotal = d.ppv !== undefined ? (Number(d.ppv) / 1000) : (ppv1 + ppv2);
 
       document.getElementById('pvVal').textContent = ppvTotal.toFixed(2) + ' kW';
       
-      var epvToday = Number(d.epvToday !== undefined ? d.epvToday : (d.eacToday || 0));
-      if (epvToday > 1000) epvToday = epvToday / 10;
+      // Dagsproduktion sol:
+      // I MOD-XH med batteri är eacToday = total AC ut (inkl. urladdat batteri!),
+      // medan epvToday (eller epv1Today + epv2Today) är ren solproduktion!
+      var epv1Day = Number(d.epv1Today || 0);
+      var epv2Day = Number(d.epv2Today || 0);
+      var epvToday = 0;
 
-      document.getElementById('pvSub').textContent = 'Idag totalt: ' + epvToday.toFixed(1) + ' kWh';
+      if (d._plantTodayEnergy !== undefined) {
+        epvToday = Number(d._plantTodayEnergy);
+      } else if (epv1Day > 0 || epv2Day > 0) {
+        epvToday = epv1Day + epv2Day;
+      } else if (d.epvToday !== undefined) {
+        epvToday = Number(d.epvToday);
+      } else {
+        // Om bara eacToday finns, dra bort dagens batteriurladdning så bara solen blir kvar
+        var eac = Number(d.eacToday || 0);
+        var edis = Number(d.edischargeToday || d.bdc1EdischargeToday || 0);
+        epvToday = Math.max(0, eac - edis);
+      }
 
-      var ratio1 = ppvTotal > 0 ? (ppv1 / ppvTotal) : 0.5;
-      var ratio2 = ppvTotal > 0 ? (ppv2 / ppvTotal) : 0.5;
-      var day1 = epvToday * ratio1;
-      var day2 = epvToday * ratio2;
+      document.getElementById('pvSub').textContent = 'Idag: ' + epvToday.toFixed(1) + ' kWh';
+
+      // Dagsproduktion per sträng (använder epv1Today / epv2Today om växelriktaren skickar dem!)
+      var day1 = epv1Day > 0 ? epv1Day : (epvToday * (ppvTotal > 0 ? (ppv1 / ppvTotal) : 0.5));
+      var day2 = epv2Day > 0 ? epv2Day : (epvToday * (ppvTotal > 0 ? (ppv2 / ppvTotal) : 0.5));
 
       document.getElementById('pv1Power').textContent = ppv1.toFixed(2) + ' kW';
-      document.getElementById('pv1Day').textContent = 'Idag: ~' + day1.toFixed(1) + ' kWh';
+      document.getElementById('pv1Day').textContent = 'Idag: ' + (epv1Day > 0 ? '' : '~') + day1.toFixed(1) + ' kWh';
       document.getElementById('pv1Volt').textContent = Number(d.vpv1 || 0).toFixed(0) + ' V';
       document.getElementById('pv1Amp').textContent = Number(d.ipv1 || 0).toFixed(1) + ' A';
 
       document.getElementById('pv2Power').textContent = ppv2.toFixed(2) + ' kW';
-      document.getElementById('pv2Day').textContent = 'Idag: ~' + day2.toFixed(1) + ' kWh';
+      document.getElementById('pv2Day').textContent = 'Idag: ' + (epv2Day > 0 ? '' : '~') + day2.toFixed(1) + ' kWh';
       document.getElementById('pv2Volt').textContent = Number(d.vpv2 || 0).toFixed(0) + ' V';
       document.getElementById('pv2Amp').textContent = Number(d.ipv2 || 0).toFixed(1) + ' A';
 
@@ -401,20 +410,22 @@
         document.getElementById('cellVoltInfo').textContent = minCv.toFixed(3) + ' / ' + maxCv.toFixed(3) + ' V (Δ ' + diffMv + ' mV)';
       }
 
-      var eChargeToday = Number(d.echargeToday || d.bdc1EchargeToday || 0);
-      var eDischargeToday = Number(d.edischargeToday || d.bdc1EdischargeToday || 0);
+      var eChargeToday = Number(d.echargeToday || d.bdc1EchargeToday || d.echarge1Today || 0);
+      var eDischargeToday = Number(d.edischargeToday || d.bdc1EdischargeToday || d.edischarge1Today || 0);
       document.getElementById('battChargeToday').textContent = eChargeToday.toFixed(1) + ' kWh';
       document.getElementById('battDischargeToday').textContent = eDischargeToday.toFixed(1) + ' kWh';
 
       // 3. Husförbrukning & Elnät
       var pLocalLoad = (Number(d.pacToLocalLoad || d.plocalLoad || 0)) / 1000;
       var pGridUser = (Number(d.pacToUserTotal || d.pactouser || d.pgrid || 0)) / 1000;
-      var pGridFeed = (Number(d.powerOfGridFeed || d.pactogrid || 0)) / 1000;
+      var pGridFeed = (Number(d.pacToGridTotal || d.powerOfGridFeed || d.pactogrid || 0)) / 1000;
       var gridNet = pGridFeed > 0 ? -pGridFeed : pGridUser;
 
       document.getElementById('homeVal').textContent = pLocalLoad.toFixed(2) + ' kW';
       if (d.elocalLoadToday !== undefined) {
         document.getElementById('homeSub').textContent = 'Idag: ' + Number(d.elocalLoadToday).toFixed(1) + ' kWh';
+      } else if (d.etoUserToday !== undefined) {
+        document.getElementById('homeSub').textContent = 'Köpt idag: ' + Number(d.etoUserToday).toFixed(1) + ' kWh';
       }
 
       document.getElementById('gridVal').textContent = (gridNet < 0 ? '-' : '') + Math.abs(gridNet).toFixed(2) + ' kW';
