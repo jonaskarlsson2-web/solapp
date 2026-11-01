@@ -50,6 +50,7 @@
     .metric-label { font-size: 0.78rem; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 4px; }
     .metric-val { font-size: 1.35rem; font-weight: 700; }
     .metric-sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .metric-sub-extra { font-size: 0.72rem; color: var(--battery); margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.08); font-weight: 600; }
 
     .price-divider { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
     .price-row { display: flex; justify-content: space-between; align-items: baseline; }
@@ -144,8 +145,9 @@
         <div>
           <div class="metric-label"><span id="battBoxTitle">🔋 Batteri (--%)</span></div>
           <div class="metric-val" id="battFlowVal">0.00 kW</div>
+          <div class="metric-sub" id="battFlowSub">Standby</div>
         </div>
-        <div class="metric-sub" id="battFlowSub">Standby</div>
+        <div class="metric-sub-extra" id="battFlowToday">Idag: +0.0 / -0.0 kWh</div>
       </div>
 
       <div class="metric-box grid">
@@ -230,12 +232,12 @@
         <strong id="cellVoltInfo">-- / -- V</strong>
       </div>
       <div>
-        <span>🔋 Dagens laddning</span>
-        <strong id="battChargeToday">-- kWh</strong>
+        <span>🔋 Totalt laddat idag</span>
+        <strong id="battChargeToday" style="color: var(--battery);">-- kWh</strong>
       </div>
       <div>
-        <span>🔌 Dagens urladdning</span>
-        <strong id="battDischargeToday">-- kWh</strong>
+        <span>🔌 Totalt urladdat idag</span>
+        <strong id="battDischargeToday" style="color: #fbbf24;">-- kWh</strong>
       </div>
     </div>
   </div>
@@ -327,6 +329,16 @@
       document.getElementById('lastUpdateText').textContent = 'Uppdaterad: ' + new Date().toLocaleTimeString('sv-SE');
     }
 
+    function pickFirstNumber(obj, keys) {
+      for (var i = 0; i < keys.length; i++) {
+        var val = obj[keys[i]];
+        if (val !== undefined && val !== null && val !== "" && !isNaN(Number(val)) && Number(val) !== 0) {
+          return Number(val);
+        }
+      }
+      return 0;
+    }
+
     function populateDashboard(raw) {
       var d = raw.data || raw;
       if (d.tlx_last_data) d = d.tlx_last_data;
@@ -340,16 +352,21 @@
       document.getElementById('rawBox').textContent = JSON.stringify(nonZero, null, 2);
 
       // 1. Solsträngar & Solproduktion idag
-      // ppv1 och ppv2 kommer i Watt från Growatt -> delar med 1000 för kW
       var ppv1 = (Number(d.ppv1) || (d.vpv1 && d.ipv1 ? Number(d.vpv1) * Number(d.ipv1) : 0)) / 1000;
       var ppv2 = (Number(d.ppv2) || (d.vpv2 && d.ipv2 ? Number(d.vpv2) * Number(d.ipv2) : 0)) / 1000;
       var ppvTotal = d.ppv !== undefined ? (Number(d.ppv) / 1000) : (ppv1 + ppv2);
 
       document.getElementById('pvVal').textContent = ppvTotal.toFixed(2) + ' kW';
-      
+
+      // Batteriets dagssummor (hämtas först så vi även kan använda urladdningen för solberäkning vid behov)
+      var eChargeToday = pickFirstNumber(d, [
+        'echargeToday', 'echarge1Today', 'bdc1ChargeEnergyToday', 'bdc1EchargeToday', 'echarge1', 'echarge'
+      ]);
+      var eDischargeToday = pickFirstNumber(d, [
+        'edischargeToday', 'edischarge1Today', 'bdc1DischargeEnergyToday', 'bdc1EdischargeToday', 'edischarge1', 'edischarge'
+      ]);
+
       // Dagsproduktion sol:
-      // I MOD-XH med batteri är eacToday = total AC ut (inkl. urladdat batteri!),
-      // medan epvToday (eller epv1Today + epv2Today) är ren solproduktion!
       var epv1Day = Number(d.epv1Today || 0);
       var epv2Day = Number(d.epv2Today || 0);
       var epvToday = 0;
@@ -358,18 +375,15 @@
         epvToday = Number(d._plantTodayEnergy);
       } else if (epv1Day > 0 || epv2Day > 0) {
         epvToday = epv1Day + epv2Day;
-      } else if (d.epvToday !== undefined) {
+      } else if (d.epvToday !== undefined && Number(d.epvToday) > 0) {
         epvToday = Number(d.epvToday);
       } else {
-        // Om bara eacToday finns, dra bort dagens batteriurladdning så bara solen blir kvar
         var eac = Number(d.eacToday || 0);
-        var edis = Number(d.edischargeToday || d.bdc1EdischargeToday || 0);
-        epvToday = Math.max(0, eac - edis);
+        epvToday = Math.max(0, eac - eDischargeToday);
       }
 
       document.getElementById('pvSub').textContent = 'Idag: ' + epvToday.toFixed(1) + ' kWh';
 
-      // Dagsproduktion per sträng (använder epv1Today / epv2Today om växelriktaren skickar dem!)
       var day1 = epv1Day > 0 ? epv1Day : (epvToday * (ppvTotal > 0 ? (ppv1 / ppvTotal) : 0.5));
       var day2 = epv2Day > 0 ? epv2Day : (epvToday * (ppvTotal > 0 ? (ppv2 / ppvTotal) : 0.5));
 
@@ -383,7 +397,7 @@
       document.getElementById('pv2Volt').textContent = Number(d.vpv2 || 0).toFixed(0) + ' V';
       document.getElementById('pv2Amp').textContent = Number(d.ipv2 || 0).toFixed(1) + ' A';
 
-      // 2. Batteri & Dagens laddning/urladdning
+      // 2. Batteri & Dagens laddning/urladdning (både i övre och nedre batterirutan)
       var soc = Number(d.soc !== undefined ? d.soc : (d.bmsSoc !== undefined ? d.bmsSoc : (d.bdc1Soc || d.capacity || 0)));
       var pCharge = (Number(d.pcharge1 || d.bdc1ChargePower || d.pcharge || 0)) / 1000;
       var pDischarge = (Number(d.pdischarge1 || d.bdc1DischargePower || d.pdischarge || 0)) / 1000;
@@ -391,8 +405,12 @@
 
       document.getElementById('battBoxTitle').textContent = '🔋 Batteri (' + soc + '%)';
       document.getElementById('battFlowVal').textContent = (battNet >= 0 ? '+' : '') + battNet.toFixed(2) + ' kW';
-      document.getElementById('battFlowSub').textContent = pCharge > 0.02 ? 'Laddar' : (pDischarge > 0.02 ? 'Urladdar' : 'Standby');
+      document.getElementById('battFlowSub').textContent = pCharge > 0.02 ? 'Laddar nu' : (pDischarge > 0.02 ? 'Urladdar nu' : 'Standby');
+      
+      // Visar dagens totalt laddat och urladdat direkt i övre batterirutan:
+      document.getElementById('battFlowToday').textContent = 'Idag: +' + eChargeToday.toFixed(1) + ' / -' + eDischargeToday.toFixed(1) + ' kWh';
 
+      // Samt i den nedre batteristatus-rutan:
       document.getElementById('socText').textContent = soc + '%';
       document.getElementById('socBar').style.width = Math.min(100, Math.max(0, soc)) + '%';
       var storedKwh = ((soc / 100) * BATTERY_CAPACITY_KWH).toFixed(1);
@@ -410,10 +428,8 @@
         document.getElementById('cellVoltInfo').textContent = minCv.toFixed(3) + ' / ' + maxCv.toFixed(3) + ' V (Δ ' + diffMv + ' mV)';
       }
 
-      var eChargeToday = Number(d.echargeToday || d.bdc1EchargeToday || d.echarge1Today || 0);
-      var eDischargeToday = Number(d.edischargeToday || d.bdc1EdischargeToday || d.edischarge1Today || 0);
-      document.getElementById('battChargeToday').textContent = eChargeToday.toFixed(1) + ' kWh';
-      document.getElementById('battDischargeToday').textContent = eDischargeToday.toFixed(1) + ' kWh';
+      document.getElementById('battChargeToday').textContent = '+' + eChargeToday.toFixed(1) + ' kWh';
+      document.getElementById('battDischargeToday').textContent = '-' + eDischargeToday.toFixed(1) + ' kWh';
 
       // 3. Husförbrukning & Elnät
       var pLocalLoad = (Number(d.pacToLocalLoad || d.plocalLoad || 0)) / 1000;
@@ -422,7 +438,7 @@
       var gridNet = pGridFeed > 0 ? -pGridFeed : pGridUser;
 
       document.getElementById('homeVal').textContent = pLocalLoad.toFixed(2) + ' kW';
-      if (d.elocalLoadToday !== undefined) {
+      if (d.elocalLoadToday !== undefined && Number(d.elocalLoadToday) > 0) {
         document.getElementById('homeSub').textContent = 'Idag: ' + Number(d.elocalLoadToday).toFixed(1) + ' kWh';
       } else if (d.etoUserToday !== undefined) {
         document.getElementById('homeSub').textContent = 'Köpt idag: ' + Number(d.etoUserToday).toFixed(1) + ' kWh';
@@ -477,3 +493,4 @@
   </script>
 </body>
 </html>
+
